@@ -1,0 +1,35 @@
+# Julia files
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+deps/deps.jl
+Manifest.toml
+
+# Documentation build
+docs/build/
+docs/site/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test and coverage
+coverage/
+*.lcov
+lcov.info
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Package manager
+/dev/
+LocalPreferences.toml
+
+# Worktrees
+.worktrees/
