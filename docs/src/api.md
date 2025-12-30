@@ -9,7 +9,7 @@ PipeChannel
 ## Channel Operations
 
 ```@docs
-Base.put!(::PipeChannel, ::Any)
+Base.put!(::PipeChannel{T}, ::T) where T
 Base.take!(::PipeChannel)
 Base.close(::PipeChannel)
 Base.bind(::PipeChannel, ::Task)
@@ -44,7 +44,7 @@ end
 ```
 
 ```@docs
-Base.iterate(::PipeChannel, ::Any)
-Base.eltype(::Type{<:PipeChannel})
+Base.iterate(::PipeChannel{T}, ::Any) where T
+Base.eltype(::Type{PipeChannel{T}}) where T
 Base.IteratorSize(::Type{<:PipeChannel})
 ```

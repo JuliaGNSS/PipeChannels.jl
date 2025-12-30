@@ -344,7 +344,19 @@ function Base.iterate(ch::PipeChannel{T}, state=nothing) where {T}
     end
 end
 
+"""
+    IteratorSize(::Type{<:PipeChannel})
+
+Returns `Base.SizeUnknown()` since the number of elements in a `PipeChannel`
+cannot be determined in advance (depends on when the channel is closed).
+"""
 Base.IteratorSize(::Type{<:PipeChannel}) = Base.SizeUnknown()
+
+"""
+    eltype(::Type{PipeChannel{T}}) where T
+
+Returns the element type `T` of the `PipeChannel{T}`.
+"""
 Base.eltype(::Type{PipeChannel{T}}) where {T} = T
 
 end # module PipeChannels

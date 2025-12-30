@@ -2,5 +2,8 @@
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 PipeChannels = "316ea068-b8d4-4418-b34f-158552ec34f5"
 
+[sources]
+PipeChannels = {path = ".."}
+
 [compat]
 Documenter = "1"
