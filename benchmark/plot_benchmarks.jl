@@ -5,7 +5,11 @@ using CairoMakie
 # Include benchmark definitions
 include("benchmarks.jl")
 
-println("Running benchmarks... (this may take a few minutes)")
+if Threads.nthreads() < 2
+    @warn "Running with $(Threads.nthreads()) thread(s). For best results showing multi-core performance, run with: julia -t 2 --project=. plot_benchmarks.jl"
+end
+
+println("Running benchmarks with $(Threads.nthreads()) thread(s)... (this may take a few minutes)")
 
 # Run the benchmark suite
 results = run(SUITE, verbose=true, seconds=5)
