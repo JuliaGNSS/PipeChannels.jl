@@ -45,7 +45,7 @@ value = take!(ch)  # Returns 42
 take!(ch)  # Throws InvalidStateException (closed and empty)
 ```
 """
-mutable struct PipeChannel{T}
+mutable struct PipeChannel{T} <: AbstractChannel{T}
     buffer::Vector{T}
     capacity::Int
     head::Threads.Atomic{Int}  # Write position (producer only)
