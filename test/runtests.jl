@@ -208,4 +208,145 @@ using PipeChannels
         end
     end
 
+    @testset "Batch put!" begin
+        ch = PipeChannel{Int}(16)
+
+        # Write a batch
+        data = [1, 2, 3, 4, 5]
+        result = put!(ch, data)
+        @test result === data  # Returns the input vector
+        @test Base.n_avail(ch) == 5
+
+        # Read back and verify
+        for i in 1:5
+            @test take!(ch) == i
+        end
+
+        close(ch)
+    end
+
+    @testset "Batch put! blocking" begin
+        # Test that batch put! blocks when buffer is full
+        ch = PipeChannel{Int}(4)
+
+        # This should block until consumer drains some items
+        producer = @async put!(ch, collect(1:10))
+
+        # Give producer time to start
+        sleep(0.01)
+
+        # Drain items - this should unblock the producer
+        results = Int[]
+        for _ in 1:10
+            push!(results, take!(ch))
+        end
+
+        wait(producer)
+        @test results == collect(1:10)
+
+        close(ch)
+    end
+
+    @testset "Batch take! with count" begin
+        ch = PipeChannel{Int}(16)
+
+        # Fill channel
+        for i in 1:10
+            put!(ch, i)
+        end
+
+        # Take a batch
+        result = take!(ch, 5)
+        @test result == [1, 2, 3, 4, 5]
+        @test Base.n_avail(ch) == 5
+
+        # Take remaining
+        result = take!(ch, 5)
+        @test result == [6, 7, 8, 9, 10]
+
+        close(ch)
+    end
+
+    @testset "Batch take! blocking" begin
+        # Test that batch take! blocks when not enough data
+        ch = PipeChannel{Int}(16)
+
+        # Start consumer that wants 10 items
+        consumer = @async take!(ch, 10)
+
+        # Give consumer time to start
+        sleep(0.01)
+
+        # Producer sends items - this should unblock the consumer
+        for i in 1:10
+            put!(ch, i)
+        end
+
+        result = fetch(consumer)
+        @test result == collect(1:10)
+
+        close(ch)
+    end
+
+    @testset "Batch take! with output buffer" begin
+        ch = PipeChannel{Int}(16)
+
+        # Fill channel
+        for i in 1:10
+            put!(ch, i)
+        end
+
+        # Take into pre-allocated buffer
+        buffer = Vector{Int}(undef, 5)
+        n = take!(ch, buffer)
+        @test n == 5
+        @test buffer == [1, 2, 3, 4, 5]
+
+        # Take remaining
+        buffer = Vector{Int}(undef, 5)
+        n = take!(ch, buffer)
+        @test n == 5
+        @test buffer == [6, 7, 8, 9, 10]
+
+        close(ch)
+    end
+
+    @testset "Batch operations wraparound" begin
+        # Test that batch operations work correctly when buffer wraps around
+        ch = PipeChannel{Int}(8)
+
+        # Fill partially, then drain
+        for i in 1:5
+            put!(ch, i)
+        end
+        for _ in 1:5
+            take!(ch)
+        end
+
+        # Now head and tail are at position 6
+        # Write a batch that will wrap around
+        data = collect(1:6)
+        put!(ch, data)
+        @test Base.n_avail(ch) == 6
+
+        # Take as batch
+        result = take!(ch, 6)
+        @test result == [1, 2, 3, 4, 5, 6]
+
+        close(ch)
+    end
+
+    @testset "Batch on closed channel" begin
+        ch = PipeChannel{Int}(16)
+        close(ch)
+
+        # put! on closed channel should throw
+        @test_throws InvalidStateException put!(ch, [1, 2, 3])
+
+        # take! on closed empty channel should throw
+        @test_throws InvalidStateException take!(ch, 5)
+        buffer = Vector{Int}(undef, 5)
+        @test_throws InvalidStateException take!(ch, buffer)
+    end
+
 end

@@ -12,6 +12,14 @@ Julia's built-in `Channel` type is excellent for general-purpose concurrent prog
 
 ![Benchmark comparison](assets/benchmark_comparison.png)
 
+### Batch Operations
+
+For even higher throughput, `PipeChannel` supports batch operations that amortize the cost of atomic operations across multiple items:
+
+![Batch benchmark comparison](assets/batch_benchmark_comparison.png)
+
+With batch size 64, throughput increases by **15-20x** compared to single-item operations, achieving over 400 million items/second.
+
 ## Installation
 
 ```julia
@@ -41,6 +49,40 @@ end
 consumer = Threads.@spawn begin
     for value in ch
         println("Received: ", value)
+    end
+end
+
+wait(producer)
+wait(consumer)
+```
+
+### Batch Operations
+
+For high-throughput scenarios, use batch `put!` and `take!` to transfer multiple items at once:
+
+```julia
+ch = PipeChannel{Int}(1024)
+
+# Producer: write batches
+producer = Threads.@spawn begin
+    data = collect(1:64)
+    for _ in 1:1000
+        put!(ch, data)  # Blocks until all 64 items are written
+    end
+    close(ch)
+end
+
+# Consumer: read into pre-allocated buffer
+consumer = Threads.@spawn begin
+    buffer = Vector{Int}(undef, 64)
+    while isopen(ch) || !isempty(ch)
+        try
+            take!(ch, buffer)  # Blocks until buffer is filled
+            # process buffer...
+        catch e
+            e isa InvalidStateException && break
+            rethrow()
+        end
     end
 end
 
