@@ -10,7 +10,7 @@ PipeChannel
 
 ```@docs
 Base.put!(::PipeChannel{T}, ::T) where T
-Base.take!(::PipeChannel)
+Base.take!(::PipeChannel{T}) where T
 Base.close(::PipeChannel)
 Base.bind(::PipeChannel, ::Task)
 ```
