@@ -14,10 +14,7 @@ Julia's built-in `Channel` type is excellent for general-purpose concurrent prog
 
 ### Performance
 
-Benchmarks show:
-- **4-6x faster** throughput compared to `Channel`
-- **99.8% reduction** in allocations
-- **Zero allocations** in the hot path (`put!`/`take!`)
+![Benchmark comparison](benchmark/benchmark_comparison.png)
 
 ## Installation
 
