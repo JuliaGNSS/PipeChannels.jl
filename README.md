@@ -16,6 +16,14 @@ Julia's built-in `Channel` type is excellent for general-purpose concurrent prog
 
 ![Benchmark comparison](benchmark/benchmark_comparison.png)
 
+### Batch Operations
+
+For even higher throughput, `PipeChannel` supports batch operations that amortize the cost of atomic operations across multiple items:
+
+![Batch benchmark comparison](benchmark/batch_benchmark_comparison.png)
+
+With batch size 64, throughput increases by **15-20x** compared to single-item operations, achieving over 400 million items/second.
+
 ## Installation
 
 ```julia
@@ -52,6 +60,40 @@ wait(producer)
 wait(consumer)
 ```
 
+### Batch Operations
+
+For high-throughput scenarios, use batch `put!` and `take!` to transfer multiple items at once:
+
+```julia
+ch = PipeChannel{Int}(1024)
+
+# Producer: write batches
+producer = Threads.@spawn begin
+    data = collect(1:64)
+    for _ in 1:1000
+        put!(ch, data)  # Blocks until all 64 items are written
+    end
+    close(ch)
+end
+
+# Consumer: read into pre-allocated buffer
+consumer = Threads.@spawn begin
+    buffer = Vector{Int}(undef, 64)
+    while isopen(ch) || !isempty(ch)
+        try
+            take!(ch, buffer)  # Blocks until buffer is filled
+            # process buffer...
+        catch e
+            e isa InvalidStateException && break
+            rethrow()
+        end
+    end
+end
+
+wait(producer)
+wait(consumer)
+```
+
 ### Error Propagation with `bind`
 
 Just like `Channel`, you can bind a task to automatically close the channel and propagate errors:
@@ -80,7 +122,10 @@ end
 
 ### Channel Operations
 - `put!(ch, value)` - Add an element (blocks if full)
+- `put!(ch, values::AbstractVector)` - Add multiple elements (blocks until all written)
 - `take!(ch)` - Remove and return an element (blocks if empty)
+- `take!(ch, n::Integer)` - Remove and return exactly `n` elements as a new vector
+- `take!(ch, buffer::AbstractVector)` - Fill `buffer` with elements (blocks until full)
 - `close(ch)` - Close the channel
 - `bind(ch, task)` - Bind a task for automatic close and error propagation
 

@@ -359,4 +359,190 @@ Returns the element type `T` of the `PipeChannel{T}`.
 """
 Base.eltype(::Type{PipeChannel{T}}) where {T} = T
 
+# ============================================================================
+# Batch Operations
+# ============================================================================
+
+"""
+    put!(ch::PipeChannel{T}, values::AbstractVector{T}) -> AbstractVector{T}
+
+Add multiple elements to the buffer in a single batch operation.
+Blocks until all items are written. Returns the input vector.
+
+This is more efficient than calling `put!` repeatedly because:
+- Fewer atomic writes (one per batch of items that fit)
+- Reduced per-item overhead
+
+# Behavior
+- Writes as many items as possible, then blocks until space is available
+- Continues until all items are written
+- Returns the input vector (for consistency with single-item `put!`)
+
+# Throws
+- `InvalidStateException`: If the channel is closed
+
+# Thread Safety
+Must only be called from a single producer thread.
+
+# Examples
+```julia
+ch = PipeChannel{Int}(100)
+data = collect(1:50)
+put!(ch, data)  # Blocks until all 50 items are written
+```
+"""
+function Base.put!(ch::PipeChannel{T}, values::AbstractVector{T}) where {T}
+    isempty(values) && return values
+
+    offset = 0
+    total = length(values)
+
+    while offset < total
+        if ch.closed[]
+            check_closed_and_throw(ch)
+        end
+
+        head = ch.head[]
+        tail = ch.tail[]
+
+        # Calculate available space
+        if head >= tail
+            # Available space is split: from head to capacity, and from 1 to tail-1
+            space_to_end = ch.capacity - head + 1
+            space_at_start = tail - 1
+            total_space = space_to_end + space_at_start - 1  # -1 because we can't fill completely
+        else
+            # Available space is contiguous: from head to tail-1
+            total_space = tail - head - 1
+        end
+
+        # No space available - spin-wait
+        if total_space <= 0
+            yield()
+            continue
+        end
+
+        # Write as many items as we can
+        n_to_write = min(total - offset, total_space)
+
+        pos = head
+        @inbounds for i in 1:n_to_write
+            ch.buffer[pos] = values[offset + i]
+            pos = pos == ch.capacity ? 1 : pos + 1
+        end
+
+        # Single atomic update to publish all writes
+        ch.head[] = pos
+        offset += n_to_write
+    end
+
+    return values
+end
+
+"""
+    take!(ch::PipeChannel{T}, n::Integer) -> Vector{T}
+
+Remove and return exactly `n` elements from the buffer in a single batch operation.
+Blocks until all `n` items are available.
+
+This is more efficient than calling `take!` repeatedly because:
+- Fewer atomic writes (one per batch of items available)
+- Single allocation for the result vector
+- Reduced per-item overhead
+
+# Behavior
+- Reads as many items as available, then blocks until more data arrives
+- Continues until exactly `n` items are read
+- Returns a vector of exactly `n` items
+
+# Throws
+- `InvalidStateException`: If the channel is closed before `n` items can be read
+
+# Thread Safety
+Must only be called from a single consumer thread.
+
+# Examples
+```julia
+ch = PipeChannel{Int}(100)
+# ... producer puts data ...
+batch = take!(ch, 32)  # Blocks until exactly 32 items are available
+```
+"""
+function Base.take!(ch::PipeChannel{T}, n::Integer) where {T}
+    n <= 0 && return T[]
+    result = Vector{T}(undef, n)
+    take!(ch, result)
+    return result
+end
+
+"""
+    take!(ch::PipeChannel{T}, output::AbstractVector{T}) -> Int
+
+Remove elements from the buffer into a pre-allocated output vector.
+Blocks until the entire output buffer is filled. Returns `length(output)`.
+
+This variant avoids allocation by writing into a provided buffer.
+
+# Behavior
+- Reads as many items as available, then blocks until more data arrives
+- Continues until the entire output buffer is filled
+- Returns `length(output)`
+
+# Throws
+- `InvalidStateException`: If the channel is closed before the buffer can be filled
+
+# Thread Safety
+Must only be called from a single consumer thread.
+
+# Examples
+```julia
+ch = PipeChannel{Int}(100)
+buffer = Vector{Int}(undef, 32)
+take!(ch, buffer)  # Blocks until all 32 slots are filled
+```
+"""
+function Base.take!(ch::PipeChannel{T}, output::AbstractVector{T}) where {T}
+    isempty(output) && return 0
+
+    total = length(output)
+    offset = 0
+
+    while offset < total
+        tail = ch.tail[]
+        head = ch.head[]
+
+        # Check if buffer is empty
+        if tail == head
+            if ch.closed[]
+                check_closed_and_throw(ch)
+            end
+            # Spin-wait for data
+            yield()
+            continue
+        end
+
+        # Calculate available items
+        if head >= tail
+            available = head - tail
+        else
+            available = ch.capacity - tail + head
+        end
+
+        # Read as many items as we can
+        n_to_read = min(total - offset, available)
+
+        pos = tail
+        @inbounds for i in 1:n_to_read
+            output[offset + i] = ch.buffer[pos]
+            pos = pos == ch.capacity ? 1 : pos + 1
+        end
+
+        # Single atomic update to release all read slots
+        ch.tail[] = pos
+        offset += n_to_read
+    end
+
+    return total
+end
+
 end # module PipeChannels

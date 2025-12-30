@@ -15,6 +15,16 @@ Base.close(::PipeChannel)
 Base.bind(::PipeChannel, ::Task)
 ```
 
+## Batch Operations
+
+Batch operations allow transferring multiple items at once, significantly improving throughput by amortizing the cost of atomic operations.
+
+```@docs
+Base.put!(::PipeChannel{T}, ::AbstractVector{T}) where T
+Base.take!(::PipeChannel{T}, ::Integer) where T
+Base.take!(::PipeChannel{T}, ::AbstractVector{T}) where T
+```
+
 ## Query Functions
 
 ```@docs
