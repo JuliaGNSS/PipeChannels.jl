@@ -349,4 +349,103 @@ using PipeChannels
         @test_throws InvalidStateException take!(ch, buffer)
     end
 
+    @testset "Batch larger than buffer capacity" begin
+        # Test batch operations where batch size exceeds buffer capacity
+        # This tests the blocking/resuming logic for race conditions
+        capacity = 4
+        batch_size = 20  # 5x larger than capacity
+
+        ch = PipeChannel{Int}(capacity)
+
+        # Test put! with batch larger than buffer
+        data = collect(1:batch_size)
+        producer = @async put!(ch, data)
+
+        # Consumer drains one at a time
+        results = Int[]
+        for _ in 1:batch_size
+            push!(results, take!(ch))
+        end
+
+        wait(producer)
+        @test results == data
+
+        close(ch)
+    end
+
+    @testset "Batch larger than buffer - take!" begin
+        capacity = 4
+        batch_size = 20
+
+        ch = PipeChannel{Int}(capacity)
+
+        # Producer feeds one at a time
+        producer = @async begin
+            for i in 1:batch_size
+                put!(ch, i)
+            end
+        end
+
+        # Consumer takes entire batch at once
+        result = take!(ch, batch_size)
+
+        wait(producer)
+        @test result == collect(1:batch_size)
+
+        close(ch)
+    end
+
+    @testset "Batch larger than buffer - concurrent stress test" begin
+        # Run multiple iterations to catch race conditions
+        capacity = 8
+        batch_size = 100
+        num_iterations = 10
+
+        for iter in 1:num_iterations
+            ch = PipeChannel{Int}(capacity)
+
+            producer = @async begin
+                data = collect(1:batch_size)
+                put!(ch, data)
+                close(ch)
+            end
+
+            buffer = Vector{Int}(undef, batch_size)
+            take!(ch, buffer)
+
+            wait(producer)
+            @test buffer == collect(1:batch_size)
+        end
+    end
+
+    @testset "Threaded batch larger than buffer" begin
+        if Threads.nthreads() >= 2
+            capacity = 8
+            batch_size = 1000
+            num_iterations = 5
+
+            for iter in 1:num_iterations
+                ch = PipeChannel{Int}(capacity)
+
+                producer = Threads.@spawn begin
+                    data = collect(1:batch_size)
+                    put!(ch, data)
+                    close(ch)
+                end
+
+                consumer = Threads.@spawn begin
+                    buffer = Vector{Int}(undef, batch_size)
+                    take!(ch, buffer)
+                    buffer
+                end
+
+                wait(producer)
+                result = fetch(consumer)
+                @test result == collect(1:batch_size)
+            end
+        else
+            @info "Skipping threaded batch test (need at least 2 threads)"
+        end
+    end
+
 end
