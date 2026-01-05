@@ -331,8 +331,11 @@ end
 Iterate over values in the channel until it's closed and empty.
 Catches `InvalidStateException` to cleanly end iteration.
 If a bound task failed, the `TaskFailedException` is propagated.
+
+Note: The `@inline` annotation is critical for avoiding heap allocation of the
+returned `(value, nothing)` tuple when `T` is not an isbits type.
 """
-function Base.iterate(ch::PipeChannel{T}, state=nothing) where {T}
+@inline function Base.iterate(ch::PipeChannel{T}, state=nothing) where {T}
     try
         value = take!(ch)
         return (value, nothing)
