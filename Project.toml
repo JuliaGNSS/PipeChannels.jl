@@ -1,6 +1,6 @@
 name = "PipeChannels"
 uuid = "316ea068-b8d4-4418-b34f-158552ec34f5"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Soeren Schoenbrod <soeren.schoenbrod@outlook.com>"]
 
 [compat]
