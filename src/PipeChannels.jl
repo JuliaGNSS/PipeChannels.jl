@@ -336,14 +336,32 @@ Note: The `@inline` annotation is critical for avoiding heap allocation of the
 returned `(value, nothing)` tuple when `T` is not an isbits type.
 """
 @inline function Base.iterate(ch::PipeChannel{T}, state=nothing) where {T}
-    try
-        value = take!(ch)
-        return (value, nothing)
-    catch e
-        if e isa InvalidStateException
-            return nothing
+    # Fast path: if channel is open or has data, try to take
+    if isopen(ch) || isready(ch)
+        try
+            value = take!(ch)
+            return (value, nothing)
+        catch e
+            if e isa InvalidStateException
+                # Check if there's a stored exception we should throw instead
+                # This handles the case where take! threw InvalidStateException but
+                # there's a more specific exception from a bound task
+                stored = ch.excp
+                if stored !== nothing && !isa(stored, InvalidStateException)
+                    throw(stored)
+                end
+                return nothing
+            end
+            rethrow()
         end
-        rethrow()
+    else
+        # Channel is closed and empty - check for stored exception from bind
+        # This matches Julia's Channel behavior: propagate bound task exceptions
+        e = ch.excp
+        if e !== nothing && !isa(e, InvalidStateException)
+            throw(e)
+        end
+        return nothing
     end
 end
 
