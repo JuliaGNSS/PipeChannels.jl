@@ -448,4 +448,35 @@ using PipeChannels
         end
     end
 
+    @testset "iterate does not drop items when close races with final put!" begin
+        # Regression test: previously `iterate` guarded `take!` with
+        # `isopen(ch) || isready(ch)`, which could observe the channel as
+        # closed-and-empty and drop the last item(s) when a producer's final
+        # `put!` became visible only after its `close()`. Stress the window by
+        # producing on one thread and consuming (iterating) on another over many
+        # trials.
+        if Threads.nthreads() >= 2
+            n = 3
+            failures = 0
+            for _ in 1:5000
+                ch = PipeChannel{Int}(16)
+                producer = Threads.@spawn begin
+                    for i in 1:n
+                        put!(ch, i)
+                    end
+                    close(ch)
+                end
+                got = Int[]
+                for v in ch
+                    push!(got, v)
+                end
+                wait(producer)
+                got == collect(1:n) || (failures += 1)
+            end
+            @test failures == 0
+        else
+            @info "Skipping iterate/close race test (need at least 2 threads)"
+        end
+    end
+
 end
