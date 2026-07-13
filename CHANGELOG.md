@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/JuliaGNSS/PipeChannels.jl/compare/v0.1.2...v0.1.3) (2026-07-13)
+
+
+### Bug Fixes
+
+* don't drop items when close races with the final put! ([acee8ae](https://github.com/JuliaGNSS/PipeChannels.jl/commit/acee8aee154c244f1be2ef411ed630a98e1b33c0))
+
 ## [0.1.2](https://github.com/JuliaGNSS/PipeChannels.jl/compare/v0.1.1...v0.1.2) (2026-01-19)
 
 
