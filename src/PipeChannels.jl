@@ -218,8 +218,10 @@ function Base.wait(ch::PipeChannel)
         if ch.head[] != ch.tail[]
             return nothing
         end
-        # Check if closed and empty
-        if ch.closed[]
+        # Check if closed and empty. Re-read the indices after observing `closed`
+        # (see take!): close() is ordered after every put!, so a re-read here sees
+        # any item published just before close(), avoiding a spurious throw.
+        if ch.closed[] && ch.head[] == ch.tail[]
             check_closed_and_throw(ch)
         end
         # Spin-wait
@@ -306,7 +308,11 @@ function Base.take!(ch::PipeChannel{T}) where {T}
 
         # Check if buffer is empty
         if tail == head
-            if ch.closed[]
+            # Re-read head after observing `closed`. `close()` is ordered after
+            # every `put!`, so if the channel still looks empty here it is truly
+            # drained. Without the re-read a `put!` made visible just before
+            # `close()` could be skipped, dropping the last item(s).
+            if ch.closed[] && tail == ch.head[]
                 check_closed_and_throw(ch)
             end
             # Spin-wait
@@ -336,31 +342,24 @@ Note: The `@inline` annotation is critical for avoiding heap allocation of the
 returned `(value, nothing)` tuple when `T` is not an isbits type.
 """
 @inline function Base.iterate(ch::PipeChannel{T}, state=nothing) where {T}
-    # Fast path: if channel is open or has data, try to take
-    if isopen(ch) || isready(ch)
-        try
-            value = take!(ch)
-            return (value, nothing)
-        catch e
-            if e isa InvalidStateException
-                # Check if there's a stored exception we should throw instead
-                # This handles the case where take! threw InvalidStateException but
-                # there's a more specific exception from a bound task
-                stored = ch.excp
-                if stored !== nothing && !isa(stored, InvalidStateException)
-                    throw(stored)
-                end
-                return nothing
-            end
-            rethrow()
-        end
-    else
-        # Channel is closed and empty - check for stored exception from bind
-        # This matches Julia's Channel behavior: propagate bound task exceptions
-        e = ch.excp
-        if e !== nothing && !isa(e, InvalidStateException)
-            throw(e)
-        end
+    # Always attempt `take!` rather than guarding with `isopen(ch) || isready(ch)`.
+    #
+    # `take!` is race-free: it re-reads the head/tail indices in its own loop, so it
+    # returns a still-buffered value even after the channel has been closed, and only
+    # throws once the channel is both closed and drained. It also throws a bound
+    # task's stored exception (via `check_closed_and_throw`) when one is present.
+    #
+    # The previous `isopen(ch) || isready(ch)` guard took a racy snapshot: if a
+    # producer's final `put!` became visible to the consumer only after its `close()`,
+    # the consumer could observe the channel as closed-and-empty and return `nothing`,
+    # silently dropping the last item(s).
+    try
+        value = take!(ch)
+        return (value, nothing)
+    catch e
+        # Plain closed-and-drained: end iteration. A bound task's real exception is
+        # rethrown here (take! threw it directly), matching Julia's Channel behavior.
+        e isa InvalidStateException || rethrow()
         return nothing
     end
 end
@@ -534,7 +533,9 @@ function Base.take!(ch::PipeChannel{T}, output::AbstractVector{T}) where {T}
 
         # Check if buffer is empty
         if tail == head
-            if ch.closed[]
+            # Re-read head after observing `closed` (see single-item take!): this
+            # avoids dropping items published just before close() became visible.
+            if ch.closed[] && tail == ch.head[]
                 check_closed_and_throw(ch)
             end
             # Spin-wait for data
